@@ -6,13 +6,16 @@ import wave
 from pathlib import Path
 from typing import Any, Dict
 
-from flask import Flask, request
+import uvicorn
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import StreamingResponse
 
 from . import PiperVoice
 from .download import ensure_voice_exists, find_voice, get_voices
 
 _LOGGER = logging.getLogger()
 
+app = FastAPI()
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -99,29 +102,35 @@ def main() -> None:
         "sentence_silence": args.sentence_silence,
     }
 
-    # Create web server
-    app = Flask(__name__)
-
-    @app.route("/", methods=["GET", "POST"])
-    def app_synthesize() -> bytes:
-        if request.method == "POST":
-            text = request.data.decode("utf-8")
-        else:
-            text = request.args.get("text", "")
-
-        text = text.strip()
+    @app.post("/")
+    async def app_synthesize(request: Request):
+        text = (await request.body()).decode("utf-8").strip()
         if not text:
-            raise ValueError("No text provided")
+            raise HTTPException(status_code=400, detail="No text provided")
 
         _LOGGER.debug("Synthesizing text: %s", text)
-        with io.BytesIO() as wav_io:
-            with wave.open(wav_io, "wb") as wav_file:
-                voice.synthesize(text, wav_file, **synthesize_args)
+        wav_io = io.BytesIO()
+        with wave.open(wav_io, "wb") as wav_file:
+            voice.synthesize(text, wav_file, **synthesize_args)
 
-            return wav_io.getvalue()
+        wav_io.seek(0)
+        return StreamingResponse(wav_io, media_type="audio/wav")
 
-    app.run(host=args.host, port=args.port)
+    @app.get("/")
+    async def app_synthesize_get(text: str = ""):
+        text = text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="No text provided")
 
+        _LOGGER.debug("Synthesizing text: %s", text)
+        wav_io = io.BytesIO()
+        with wave.open(wav_io, "wb") as wav_file:
+            voice.synthesize(text, wav_file, **synthesize_args)
+
+        wav_io.seek(0)
+        return StreamingResponse(wav_io, media_type="audio/wav")
+
+    uvicorn.run(app, host=args.host, port=args.port)
 
 if __name__ == "__main__":
     main()
