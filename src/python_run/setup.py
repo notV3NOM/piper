@@ -33,7 +33,6 @@ setup(
         ]
     },
     install_requires=requirements,
-    extras_require={"gpu": ["onnxruntime-gpu>=1.11.0,<2"], "http": ["flask>=3,<4"]},
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
